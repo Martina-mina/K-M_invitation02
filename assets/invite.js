@@ -1,4 +1,3 @@
-
 (function () {
   "use strict";
 
@@ -398,24 +397,8 @@
           }, { threshold: 0.35 }).observe(v);
         };
 
-        var ducked = false;
-        var duck = function () {
-          var m = window.__lbMusic;
-          if (m && m.audio && !m.audio.paused) { ducked = true; m.pause(); }
-        };
-        var unduck = function () {
-          if (!ducked) return;
-          ducked = false;
-          if (window.__lbMusic) window.__lbMusic.play();
-        };
-
         if (withSound) {
-          var arm = function () {
-            v.addEventListener("play", duck);
-            v.addEventListener("pause", unduck);
-            v.addEventListener("ended", unduck);
-            watch();
-          };
+          var arm = watch;
           doc.addEventListener("lb:intro-open", function () {
             var p = v.play();
             if (!p || !p.then) { v.pause(); arm(); return; }
@@ -447,115 +430,6 @@
     });
   }
 
-    function initMusic() {
-    if (window.__lbMusic && typeof window.__lbMusic.destroy === "function") {
-      window.__lbMusic.destroy();
-    }
-    var cfgNode = doc.getElementById("invite-music");
-
-    if (!cfgNode) return;
-    var cfg;
-    try { cfg = JSON.parse(cfgNode.textContent); } catch (err) { return; }
-    if (!cfg || !cfg.url || cfg.player === "hidden") return;
-
-        var audio = new Audio(cfg.url);
-    audio.loop = cfg.loop !== false;
-    audio.preload = "none";
-    var autoplayOnce = null;
-
-    var introOpenStart = null;
-
-    var btn = doc.createElement("button");
-
-    btn.type = "button";
-    btn.className = "lb-music" + (cfg.player === "bar" ? " lb-music--bar" : "");
-    btn.setAttribute("aria-label", "تشغيل الموسيقى");
-    btn.innerHTML = "♪";
-    doc.body.appendChild(btn);
-
-    function play() {
-      audio.play().then(function () {
-        btn.classList.add("is-playing");
-        btn.setAttribute("aria-label", "إيقاف الموسيقى");
-      }).catch(function () { /* المتصفح منع التشغيل — ينتظر ضغطة المستخدم */ });
-    }
-    function pause() {
-      audio.pause();
-      btn.classList.remove("is-playing");
-      btn.setAttribute("aria-label", "تشغيل الموسيقى");
-    }
-
-        // زر الموسيقى مستقل عن التمرير: لا نسمح للنقرة أن تصعد إلى
-    // window/document حيث توجد مستمعات إيقاف/تشغيل التمرير.
-    ["pointerdown", "touchstart", "click"].forEach(function (eventName) {
-      btn.addEventListener(eventName, function (event) {
-        event.stopPropagation();
-      });
-    });
-    btn.addEventListener("click", function () {
-      if (audio.paused) play(); else pause();
-    });
-
-    /* التشغيل التلقائي: بيشغّل، وبيسيب محاولة تانية عند أول تفاعل
-       لو المتصفح رفض. */
-    function beginAutoplay() {
-      play();
-      // بعض المتصفحات تسمح بالتشغيل بعد أول تفاعل من المستخدم
-      autoplayOnce = function () {
-        if (audio.paused) play();
-        doc.removeEventListener("click", autoplayOnce);
-        doc.removeEventListener("touchstart", autoplayOnce);
-        autoplayOnce = null;
-      };
-      /* تأخير تكّة واحدة: لما الدالة دي تتنادى من فتح الافتتاحية،
-         إحنا جوّه ضغطة لسه بتصعد للمستند — ولو ربطنا المستمع دلوقتي
-         نفس الضغطة هتصرفه (‎once‎) وتضيّع فرصة الإنقاذ الوحيدة. */
-      setTimeout(function () {
-        if (!autoplayOnce) return;
-        doc.addEventListener("click", autoplayOnce, { once: true });
-        doc.addEventListener("touchstart", autoplayOnce, { once: true });
-      }, 0);
-    }
-
-    if (cfg.autoplay) {
-      var pendingIntro = doc.querySelector(".lb-intro:not(.is-open)");
-      if (pendingIntro) {
-        introOpenStart = function () {
-          doc.removeEventListener("lb:intro-play", introOpenStart);
-          doc.removeEventListener("lb:intro-open", introOpenStart);
-          introOpenStart = null;
-          beginAutoplay();
-        };
-        doc.addEventListener("lb:intro-play", introOpenStart);
-        doc.addEventListener("lb:intro-open", introOpenStart);
-      } else {
-        beginAutoplay();
-      }
-    }
-    window.__lbMusic = {
-      play: play,
-      pause: pause,
-      audio: audio,
-      button: btn,
-      destroy: function () {
-        audio.pause();
-        if (autoplayOnce) {
-          doc.removeEventListener("click", autoplayOnce);
-          doc.removeEventListener("touchstart", autoplayOnce);
-          autoplayOnce = null;
-        }
-        if (introOpenStart) {
-          doc.removeEventListener("lb:intro-play", introOpenStart);
-          doc.removeEventListener("lb:intro-open", introOpenStart);
-          introOpenStart = null;
-        }
-        btn.remove();
-        window.__lbMusic = null;
-      }
-    };
-  }
-
-  window.__lbRefreshMusic = initMusic;
 
   // ---------------------------------------------------------- الشاشة الافتتاحية
   function initIntro() {
@@ -583,7 +457,6 @@
       if (timer) { clearTimeout(timer); timer = null; }
       intro.classList.add("is-open");
       doc.body.style.overflow = "";
-      if (window.__lbMusic) window.__lbMusic.play();
       var vid = $("[data-intro-video]", intro);
       if (vid) { try { vid.pause(); } catch (e) {} }
       if (!editable) setTimeout(function () { intro.remove(); }, 700);
@@ -653,31 +526,16 @@
         intro.classList.add("is-awaiting-play");
         /* نفس الفعل بالظبط سواء الضغطة جت على زر التشغيل أو على أي
            حتة في الشاشة — الزر بقى دلالة بصرية مش الطريق الوحيد. */
-        /* الأغنية بتبدأ مع **ضغطة التشغيل** نفسها، مش لما الافتتاحية
-           تخلص. بس بشرط إن الافتتاحية صامتة — لو ليها صوت، صوتين فوق
-           بعض، فبتستنى لحد ما الفيديو يخلص (‎lb:intro-open‎).
-
-           لازم تتبعت جوّه مكدس الضغطة نفسها عشان سفاري على الآيفون
-           يسمح بتشغيل الصوت. */
-        var announcedPlay = false;
-        var announcePlay = function () {
-          if (announcedPlay) return;
-          announcedPlay = true;
-          doc.dispatchEvent(new CustomEvent("lb:intro-play"));
-        };
-
         startManualVideo = function () {
           if (!intro.classList.contains("is-awaiting-play")) return;
           intro.classList.remove("is-awaiting-play");
           video.muted = !wantsSound;
-          if (video.muted) announcePlay();
           var play = video.play();
 
           if (play && play.catch) {
             play.catch(function () {
               // بعض الأجهزة بترفض الصوت برضو — نجرّب صامت
               video.muted = true;
-              announcePlay();           // بقى صامت، فالأغنية تقدر تشتغل
               var again = video.play();
               if (again && again.catch) {
                 again.catch(function () {
@@ -757,7 +615,6 @@
     var codeMutations = 0;
     var codeCheck = 0;
     var codeReaction = null;
-    var codePlayAnnounced = false;
 
     function alphaOf(color) {
       var m = /rgba?\(([^)]+)\)/.exec(color || "");
@@ -876,13 +733,6 @@
 
       codeArmed = true;
       codeHanded = e;
-      /* الأغنية تبدأ مع الضغطة نفسها (سفاري محتاجها جوّه مكدس الضغطة)
-         — زي الفيديو الصامت المستني ضغطة. */
-      if (!codePlayAnnounced) {
-        codePlayAnnounced = true;
-        doc.dispatchEvent(new CustomEvent("lb:intro-play"));
-      }
-
       var hit = e.target && e.target.closest ? e.target.closest(CODE_CONTROLS) : null;
       if (!(hit && cover.contains(hit))) {
         var controls = codeControls(cover);
@@ -1700,7 +1550,6 @@
       [initLightbox, "lightbox"],
       [initVideo, "video"],
       [initImportedMedia, "imported-media"],
-      [initMusic, "music"],
       [initIntro, "intro"],
       [initLanguageToggle, "language"],
       [initRsvp, "rsvp"],
@@ -1725,7 +1574,6 @@
         initVideo();
 
     initImportedMedia();
-    initMusic();
     // المحرر بيستبدل عقدة .lb-intro لما تعدّل إعداداتها — العقدة
 
     // الجديدة مالهاش مستمعين، فبنربطها تاني
